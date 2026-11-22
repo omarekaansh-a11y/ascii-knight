@@ -41,12 +41,20 @@
     gap: 6px;
     text-shadow: 0 2px 5px rgba(0, 0, 0, 0.95);
     z-index: 2;
+    cursor: pointer;
   }
   .clock-day::before {
     content: '//';
     color: rgba(224, 36, 40, 0.9);
     font-weight: 700;
     letter-spacing: 0.05em;
+  }
+  .clock-day .odo-slot {
+    height: 1.20em;
+    line-height: 1.20em;
+    padding: 0 0.04em;
+    margin: 0;
+    letter-spacing: 0.18em !important;
   }
 
   /* 2. Clock Time - Clean lockup, zero clipping on any number combination */
@@ -148,6 +156,24 @@
     line-height: 1.1;
     text-shadow: 0 2px 5px rgba(0, 0, 0, 0.95);
     z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+  }
+  .clock-date-day {
+    display: inline-flex;
+    align-items: center;
+  }
+  .clock-date .odo-slot {
+    height: 1.18em;
+    line-height: 1.18em;
+    padding: 0 0.04em;
+    margin: 0 -0.02em;
+    letter-spacing: 0.06em !important;
+  }
+  .clock-date-month.odo-slot {
+    margin: 0;
+    margin-left: 0.35em;
   }
 
   .clock-year {
@@ -159,7 +185,22 @@
     margin-top: 1px;
     line-height: 1.1;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.95);
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
   }
+  .clock-year .odo-slot {
+    height: 1.18em;
+    line-height: 1.18em;
+    padding: 0 0.04em;
+    margin: 0 -0.02em;
+    letter-spacing: 0.10em !important;
+  }
+
+  .clock-digits .odo-ghost, .clock-digits .odo-num { letter-spacing: normal !important; }
+  .clock-day .odo-ghost, .clock-day .odo-num { letter-spacing: inherit !important; }
+  .clock-date .odo-ghost, .clock-date .odo-num { letter-spacing: inherit !important; }
+  .clock-year .odo-ghost, .clock-year .odo-num { letter-spacing: inherit !important; }
 
   /* Odometer Slot - generous horizontal breathing room prevents any glyph clipping */
   .odo-slot {
@@ -258,12 +299,14 @@
 <canvas id="view" aria-label="อัศวิน ASCII กับผ้าคลุมสีแดงที่ปลิวตามลม"></canvas>
 
 <div class="clock-container">
-  <div class="clock-day" id="clock-day"></div>
+  <div class="clock-day" id="clock-day" title="Click to preview vertical roll"></div>
   <div class="clock" id="clock" role="timer" aria-label="Current time" title="Click to toggle 12h / 24h format">
     <span class="clock-time"></span>
   </div>
-  <div class="clock-date" id="clock-date"></div>
-  <div class="clock-year" id="clock-year"></div>
+  <div class="clock-date" id="clock-date" title="Click to preview vertical roll">
+    <span class="clock-date-day"></span><span class="clock-date-month odo-slot"></span>
+  </div>
+  <div class="clock-year" id="clock-year" title="Click to preview vertical roll"></div>
 </div>
 <script>
 "use strict";
@@ -770,14 +813,6 @@ function initClock() {
     ampmEl = timeEl.querySelector('.clock-ampm');
   }
 
-  let is24Hour = false;
-  try {
-    const saved = localStorage.getItem('ascii-knight:clock-format');
-    is24Hour = saved === '24';
-  } catch (e) {
-    is24Hour = false;
-  }
-
   function createSlot(char, extraClass) {
     const slot = document.createElement('span');
     slot.className = 'odo-slot' + (extraClass ? ' ' + extraClass : '');
@@ -797,11 +832,17 @@ function initClock() {
   }
 
   function updateSlot(slot, newChar, animate) {
-    if (slot.dataset.char === newChar) return;
+    if (slot.dataset.char === newChar && slot.querySelector('.odo-ghost') && slot.querySelector('.odo-num')) return;
 
     slot.dataset.char = newChar;
-    const ghost = slot.querySelector('.odo-ghost');
-    if (ghost) ghost.textContent = newChar;
+    let ghost = slot.querySelector('.odo-ghost');
+    if (!ghost) {
+      ghost = document.createElement('span');
+      ghost.className = 'odo-ghost';
+      ghost.setAttribute('aria-hidden', 'true');
+      slot.insertBefore(ghost, slot.firstChild);
+    }
+    ghost.textContent = newChar;
 
     const current = slot.querySelector('.odo-num.odo-current');
 
@@ -872,7 +913,37 @@ function initClock() {
     }
   }
 
+  const dayEl = document.getElementById('clock-day');
+  let daySlot = dayEl ? dayEl.querySelector('.clock-day-slot') : null;
+  if (dayEl && !daySlot) {
+    daySlot = createSlot('', 'clock-day-slot');
+    dayEl.appendChild(daySlot);
+  }
+
+  const dateEl = document.getElementById('clock-date');
+  let dateDayEl = dateEl ? dateEl.querySelector('.clock-date-day') : null;
+  let dateMonthEl = dateEl ? dateEl.querySelector('.clock-date-month') : null;
+  if (dateEl && (!dateDayEl || !dateMonthEl)) {
+    dateEl.innerHTML = '<span class="clock-date-day"></span>';
+    dateDayEl = dateEl.querySelector('.clock-date-day');
+    dateMonthEl = createSlot('', 'clock-date-month');
+    dateEl.appendChild(dateMonthEl);
+  }
+
+  const yearEl = document.getElementById('clock-year');
+
+  let is24Hour = false;
+  try {
+    const saved = localStorage.getItem('ascii-knight:clock-format');
+    is24Hour = saved === '24';
+  } catch (e) {
+    is24Hour = false;
+  }
+
   let isFirstRender = true;
+  let previewUntil = 0;
+  const DAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+  const MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
 
   function updateTime(animate = true) {
     const now = new Date();
@@ -909,20 +980,76 @@ function initClock() {
     syncGroup(hEl, hourStr, shouldAnimate);
     syncGroup(mEl, minutes, shouldAnimate);
 
-    
-    const dayEl = document.getElementById('clock-day');
-    const dateEl = document.getElementById('clock-date');
-    const yearEl = document.getElementById('clock-year');
-    const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    if (dayEl) dayEl.textContent = DAYS[now.getDay()];
-    if (dateEl) dateEl.textContent = now.getDate() + ' ' + MONTHS[now.getMonth()];
-    if (yearEl) yearEl.textContent = now.getFullYear();
+    // Update Day, Date, Year with vertical odometer mechanics unless currently under user preview
+    if (Date.now() >= previewUntil) {
+      if (daySlot) {
+        updateSlot(daySlot, DAYS[now.getDay()], shouldAnimate);
+      }
+      if (dateDayEl) {
+        syncGroup(dateDayEl, String(now.getDate()), shouldAnimate);
+      }
+      if (dateMonthEl) {
+        const monthName = MONTHS[now.getMonth()];
+        if (dateMonthEl.children.length === 0) {
+          const ghost = document.createElement('span');
+          ghost.className = 'odo-ghost';
+          ghost.setAttribute('aria-hidden', 'true');
+          ghost.textContent = monthName;
+          const num = document.createElement('span');
+          num.className = 'odo-num odo-current';
+          num.textContent = monthName;
+          dateMonthEl.dataset.char = monthName;
+          dateMonthEl.append(ghost, num);
+        } else {
+          updateSlot(dateMonthEl, monthName, shouldAnimate);
+        }
+      }
+      if (yearEl) {
+        syncGroup(yearEl, String(now.getFullYear()), shouldAnimate);
+      }
+    }
+
     timeEl.setAttribute('aria-label', hourStr + ':' + minutes + (ampmStr ? ' ' + ampmStr : ''));
     if (colonEl) {
-        colonEl.style.animationDelay = '-' + (now.getMilliseconds() / 1000) + 's';
-      }
-      isFirstRender = false;
+      colonEl.style.animationDelay = '-' + (now.getMilliseconds() / 1000) + 's';
+    }
+    isFirstRender = false;
+  }
+
+  // Interactive click triggers for Day, Date, Year to test/preview odometer roll
+  if (dayEl) {
+    let dayOffset = 0;
+    dayEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      previewUntil = Date.now() + 5000;
+      dayOffset = (dayOffset + 1) % DAYS.length;
+      const targetDay = DAYS[(new Date().getDay() + dayOffset) % DAYS.length];
+      if (daySlot) updateSlot(daySlot, targetDay, true);
+    });
+  }
+
+  if (dateEl) {
+    let dateOffset = 0;
+    dateEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      previewUntil = Date.now() + 5000;
+      dateOffset = (dateOffset + 1) % 31;
+      const d = new Date();
+      d.setDate(d.getDate() + dateOffset);
+      if (dateDayEl) syncGroup(dateDayEl, String(d.getDate()), true);
+      if (dateMonthEl) updateSlot(dateMonthEl, MONTHS[d.getMonth()], true);
+    });
+  }
+
+  if (yearEl) {
+    let yearOffset = 0;
+    yearEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      previewUntil = Date.now() + 5000;
+      yearOffset = (yearOffset + 1) % 10;
+      const targetYear = String(new Date().getFullYear() + yearOffset);
+      syncGroup(yearEl, targetYear, true);
+    });
   }
 
   clockEl.addEventListener('click', () => {
