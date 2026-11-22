@@ -1,0 +1,24 @@
+{
+  "name": "ascii-knight",
+  "version": "1.0.0",
+  "description": "An atmospheric ASCII art knight with physics-simulated cloak, particle embers, interactive canvas, and a momentum odometer clock.",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omarekaansh-a11y/ascii-knight.git"
+  },
+  "keywords": [
+    "ascii",
+    "ascii-art",
+    "canvas",
+    "physics",
+    "clock",
+    "wallpaper",
+    "html5"
+  ],
+  "author": "ekaansh",
+  "license": "MIT"
+}
