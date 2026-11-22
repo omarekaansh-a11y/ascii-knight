@@ -218,6 +218,10 @@
     font-feature-settings: 'tnum' 1;
     letter-spacing: normal !important;
     box-sizing: content-box;
+    transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                padding 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                margin 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.45s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   /* Last digit of minutes: no negative margin on right to ensure clean clearance from AM/PM */
@@ -831,8 +835,8 @@ function initClock() {
     return slot;
   }
 
-  function updateSlot(slot, newChar, animate) {
-    if (slot.dataset.char === newChar && slot.querySelector('.odo-ghost') && slot.querySelector('.odo-num')) return;
+  function updateSlot(slot, newChar, animate, forceRoll = false) {
+    if (!forceRoll && slot.dataset.char === newChar && slot.querySelector('.odo-ghost') && slot.querySelector('.odo-num')) return;
 
     slot.dataset.char = newChar;
     let ghost = slot.querySelector('.odo-ghost');
@@ -877,12 +881,12 @@ function initClock() {
     }, 600);
   }
 
-  function syncGroup(containerEl, targetStr, animate) {
+  function syncGroup(containerEl, targetStr, animate, forceRoll = false) {
     const slots = Array.from(containerEl.querySelectorAll(':scope > .odo-slot'));
 
     if (slots.length === targetStr.length) {
       for (let i = 0; i < targetStr.length; i++) {
-        updateSlot(slots[i], targetStr[i], animate);
+        updateSlot(slots[i], targetStr[i], animate, forceRoll);
       }
       return;
     }
@@ -895,19 +899,45 @@ function initClock() {
       return;
     }
 
+    // Adding leading digit (e.g. 1 digit to 2 digits: "2" -> "02") with top incoming scroll
     if (slots.length < targetStr.length) {
       const lead = createSlot(targetStr[0]);
+      const leadNum = lead.querySelector('.odo-num.odo-current');
+      if (animate && leadNum) {
+        leadNum.className = 'odo-num odo-incoming';
+        void leadNum.offsetWidth;
+        requestAnimationFrame(() => {
+          leadNum.className = 'odo-num odo-current';
+        });
+      }
       containerEl.insertBefore(lead, containerEl.firstChild);
       for (let i = 1; i < targetStr.length; i++) {
-        updateSlot(slots[i - 1], targetStr[i], animate);
+        updateSlot(slots[i - 1], targetStr[i], animate, forceRoll);
       }
       return;
     }
 
+    // Removing leading digit (e.g. 2 digits to 1 digit: "02" -> "2") with down exit scroll and width collapse
     if (slots.length > targetStr.length) {
-      slots[0].remove();
+      const exitingSlot = slots[0];
+      const current = exitingSlot.querySelector('.odo-num.odo-current');
+      if (current) current.className = 'odo-num odo-old odo-exit';
+
+      exitingSlot.style.transition = 'width 0.45s cubic-bezier(0.16, 1, 0.3, 1), padding 0.45s cubic-bezier(0.16, 1, 0.3, 1), margin 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease';
+      exitingSlot.style.display = 'inline-flex';
+      exitingSlot.style.width = '0px';
+      exitingSlot.style.padding = '0px';
+      exitingSlot.style.margin = '0px';
+      exitingSlot.style.opacity = '0';
+
+      setTimeout(() => {
+        if (exitingSlot.parentNode === containerEl) {
+          exitingSlot.remove();
+        }
+      }, 460);
+
       for (let i = 0; i < targetStr.length; i++) {
-        updateSlot(slots[i + 1], targetStr[i], animate);
+        updateSlot(slots[i + 1], targetStr[i], animate, forceRoll);
       }
       return;
     }
@@ -945,7 +975,7 @@ function initClock() {
   const DAYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
   const MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE', 'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
 
-  function updateTime(animate = true) {
+  function updateTime(animate = true, forceRoll = false) {
     const now = new Date();
     let hours = now.getHours();
     const minutes = String(now.getMinutes()).padStart(2, '0');
@@ -956,28 +986,28 @@ function initClock() {
 
     if (is24Hour) {
       hourStr = String(hours).padStart(2, '0');
-      ampmEl.style.setProperty('display', 'none', 'important');
+      ampmStr = '24H';
     } else {
       ampmStr = hours >= 12 ? 'PM' : 'AM';
       hours = hours % 12 || 12;
       hourStr = String(hours);
-      ampmEl.style.removeProperty('display');
-      if (ampmEl.children.length === 0) {
-        const ghost = document.createElement('span');
-        ghost.className = 'odo-ghost';
-        ghost.setAttribute('aria-hidden', 'true');
-        ghost.textContent = ampmStr;
-        const num = document.createElement('span');
-        num.className = 'odo-num odo-current';
-        num.textContent = ampmStr;
-        ampmEl.dataset.char = ampmStr;
-        ampmEl.append(ghost, num);
-      } else {
-        updateSlot(ampmEl, ampmStr, shouldAnimate);
-      }
     }
 
-    syncGroup(hEl, hourStr, shouldAnimate);
+    if (ampmEl.children.length === 0) {
+      const ghost = document.createElement('span');
+      ghost.className = 'odo-ghost';
+      ghost.setAttribute('aria-hidden', 'true');
+      ghost.textContent = ampmStr;
+      const num = document.createElement('span');
+      num.className = 'odo-num odo-current';
+      num.textContent = ampmStr;
+      ampmEl.dataset.char = ampmStr;
+      ampmEl.append(ghost, num);
+    } else {
+      updateSlot(ampmEl, ampmStr, shouldAnimate, forceRoll);
+    }
+
+    syncGroup(hEl, hourStr, shouldAnimate, forceRoll);
     syncGroup(mEl, minutes, shouldAnimate);
 
     // Update Day, Date, Year with vertical odometer mechanics unless currently under user preview
@@ -1057,7 +1087,7 @@ function initClock() {
     try {
       localStorage.setItem('ascii-knight:clock-format', is24Hour ? '24' : '12');
     } catch (e) {}
-    updateTime(true);
+    updateTime(true, true);
   });
 
   let clockTimer = null;
