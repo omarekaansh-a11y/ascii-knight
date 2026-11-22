@@ -1,12 +1,12 @@
-﻿# ASCII Knight ⚔️
+﻿# ASCII-knight
 
-An atmospheric, real-time procedural ASCII art knight rendered on HTML5 Canvas, accompanied by physics-driven cape and grass animations, particle embers, and a precision momentum odometer clock.
+An atmospheric, real-time procedural ASCII art knight rendered on HTML5 Canvas, accompanied by physics-driven cape and grass animations, particle embers, and a precision odometer clock.
 
 **Live Demo**: [https://asciiart-knight.vercel.app](https://asciiart-knight.vercel.app)
 
 ---
 
-## ✨ Features
+## Features:
 
 - **Procedural Canvas ASCII Engine**:
   - Pixel-level buffer rasterization rendered via direct 32-bit `Uint32Array` on `ImageData`.
@@ -14,7 +14,7 @@ An atmospheric, real-time procedural ASCII art knight rendered on HTML5 Canvas, 
   - Multi-frequency wind simulation with depth-sorted procedural grass blades (`|`, `/`, `\`, `'`, `,`, `.`) dynamically leaning with wind force.
   - Multi-strand Bézier cloth physics for the wind-swept red cape with realistic tattering and drifting embers.
   - Knight breathing and swaying cycles synchronized to ambient wind.
-- **Dynamic Momentum Odometer Clock**:
+- **Dynamic Odometer Clock**:
   - Smooth rolling digit transitions that slide vertically like a physical odometer wheel as seconds and minutes change.
   - Geometric typography featuring Google Fonts Geist (`font-weight: 700`, `tabular-nums`) with snug colon and zero glyph clipping across all digit combinations (`0`–`9`).
   - Pulsing colon synchronized at 1.0s (1 Hz) to real-world seconds.
@@ -59,16 +59,6 @@ You can use ASCII Knight as an animated desktop wallpaper using free open-source
 1. Open Wallpaper Engine and click **Wallpaper Editor** -> **Create Wallpaper**.
 2. Select **Web Wallpaper** and point to `index.html` or enter the URL `https://asciiart-knight.vercel.app`.
 3. Save and apply.
-
----
-
-## 📦 Deployment to Vercel
-
-To deploy your own instance to Vercel:
-```bash
-npx vercel
-```
-Or connect this repository directly in the [Vercel Dashboard](https://vercel.com).
 
 ---
 
