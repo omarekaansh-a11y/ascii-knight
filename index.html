@@ -256,6 +256,15 @@
 </head>
 <body>
 <canvas id="view" aria-label="อัศวิน ASCII กับผ้าคลุมสีแดงที่ปลิวตามลม"></canvas>
+
+<div class="clock-container">
+  <div class="clock-day" id="clock-day"></div>
+  <div class="clock" id="clock" role="timer" aria-label="Current time" title="Click to toggle 12h / 24h format">
+    <span class="clock-time"></span>
+  </div>
+  <div class="clock-date" id="clock-date"></div>
+  <div class="clock-year" id="clock-year"></div>
+</div>
 <script>
 "use strict";
 // ================================================================ ตั้งค่า
@@ -469,6 +478,7 @@ function blades(t, from, to) {
     const sheen = Math.pow(0.5 + 0.5 * Math.sin(TAU * (B.x / 60 - t / P2) - 0.3), 3);   // หญ้าที่ลู่ลมจะพลิกรับแสง
     const h = k >= FRONT_FROM && FRONT_FROM >= 0 ? Math.min(B.h, 10) : B.h;   // หญ้าแถวหน้าสุดไม่บังตัวอัศวินมากเกิน
     const steps = Math.max(1, Math.round(h));
+    const baseCol = lerp3(GRASS_FAR, GRASS_NEAR, B.depth);
     for (let s = 0; s <= steps; s++) {
       const u = s / steps;                                    // 0 = โคน, 1 = ปลาย
       const x = B.x + lean * h * 0.55 * u * u, y = B.y - h * u;
@@ -479,8 +489,7 @@ function blades(t, from, to) {
       const g = B.depth < 0.1 ? (u > 0.5 ? G_TICK : G_DOT) : u > 0.9 && steps > 2 ? (slope > 0.5 ? G_TICK : G_COMMA)
         : slope > 0.6 ? G_SLASH : slope < -0.6 ? G_BACK : G_PIPE;
       const l = (0.12 + 0.32 * B.depth) * (0.7 + 0.3 * u) * (0.75 + 0.7 * sheen * u);
-      let col = lerp3(GRASS_FAR, GRASS_NEAR, B.depth);
-      col = lerp3(col, GRASS_TIP, u * u * (0.25 + 0.35 * B.tint) + 0.45 * sheen * u);
+      const col = lerp3(baseCol, GRASS_TIP, u * u * (0.25 + 0.35 * B.tint) + 0.45 * sheen * u);
       if (l >= lum[i]) { set(i, l, col); glyph[i] = g; }
     }
   }
@@ -573,6 +582,7 @@ const actx = ascii.getContext("2d");
 const img = actx.createImageData(W, H), px32 = new Uint32Array(img.data.buffer);
 const glowA = document.createElement("canvas"), glowB = document.createElement("canvas"), glowC = document.createElement("canvas");
 [[glowA, 2], [glowB, 4], [glowC, 8]].forEach(([g, s]) => { g.width = Math.ceil(W / s); g.height = Math.ceil(H / s); });
+const GLOW_PASSES = [glowA, glowB, glowC].map(g => ({ canvas: g, ctx: g.getContext("2d") }));
 
 function draw() {
   px32.fill(0);
@@ -601,9 +611,11 @@ function draw() {
   ctx.drawImage(ascii, 0, 0);
   if (GLOW > 0) {                                                          // แสงฟุ้ง: ย่อภาพลงทีละครึ่งแล้วขยายทับ
     let src = ascii;
-    for (const g of [glowA, glowB, glowC]) {
-      const gx = g.getContext("2d");
-      gx.clearRect(0, 0, g.width, g.height); gx.drawImage(src, 0, 0, g.width, g.height); src = g;
+    for (let k = 0; k < 3; k++) {
+      const p = GLOW_PASSES[k];
+      p.ctx.clearRect(0, 0, p.canvas.width, p.canvas.height);
+      p.ctx.drawImage(src, 0, 0, p.canvas.width, p.canvas.height);
+      src = p.canvas;
     }
     ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = GLOW;
     ctx.drawImage(glowC, 0, 0, W, H);
@@ -611,27 +623,127 @@ function draw() {
   }
 }
 
-// ================================================================ เล่น
+var pauseClock = function() {};
+var resumeClock = function() {};
+
+// ================================================================ เล่น (Performance & Lifecycle Controller)
 let t0 = performance.now(), lastDraw = -1e9;
+let rafId = null;
+let isRunning = false;
+let isDocVisible = !document.hidden;
+let isIntersecting = true;
+let isWallpaperActive = true;
+let pausedAt = 0;
+
+function shouldRun() {
+  return isDocVisible && isIntersecting && isWallpaperActive && !document.hidden;
+}
+
 function tick(now) {
+  if (!shouldRun()) {
+    stopLoop();
+    return;
+  }
   if (now - lastDraw >= 1000 / FPS - 2) {
     lastDraw = now;
     scene((now - t0) / 1000);
     draw();
   }
-  requestAnimationFrame(tick);
+  rafId = requestAnimationFrame(tick);
 }
-requestAnimationFrame(tick);
+
+function startLoop() {
+  if (!shouldRun()) return;
+  if (!isRunning) {
+    if (pausedAt > 0) {
+      t0 += (performance.now() - pausedAt);
+      pausedAt = 0;
+    }
+    lastDraw = -1e9;
+    isRunning = true;
+    if (typeof resumeClock === "function") resumeClock();
+    rafId = requestAnimationFrame(tick);
+  }
+}
+
+function stopLoop() {
+  if (rafId) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  if (isRunning) {
+    isRunning = false;
+    pausedAt = performance.now();
+  }
+  if (typeof pauseClock === "function") pauseClock();
+}
+
+// 1. VisibilityChange - 0% CPU & GPU when tab is inactive, minimized, or virtual desktop switched
+document.addEventListener("visibilitychange", () => {
+  isDocVisible = !document.hidden;
+  if (document.hidden) {
+    stopLoop();
+  } else {
+    startLoop();
+  }
+});
+
+// 2. IntersectionObserver - 0% CPU when canvas is scrolled offscreen or occluded
+if ("IntersectionObserver" in window) {
+  const observer = new IntersectionObserver(([entry]) => {
+    isIntersecting = entry.isIntersecting;
+    if (entry.isIntersecting) {
+      startLoop();
+    } else {
+      stopLoop();
+    }
+  }, { threshold: 0.01 });
+  observer.observe(view);
+}
+
+// 3. Live Wallpaper Listeners (Lively Wallpaper & Wallpaper Engine)
+window.livelyPropertyListener = function(name, val) {
+  if (name === "livelyCurrentWallpaperState") {
+    isWallpaperActive = !!val;
+    if (isWallpaperActive) startLoop();
+    else stopLoop();
+  }
+};
+window.wallpaperPropertyListener = {
+  applyGeneralProperties: function(properties) {
+    if (properties && properties.isPaused !== undefined) {
+      isWallpaperActive = !properties.isPaused;
+      if (isWallpaperActive) startLoop();
+      else stopLoop();
+    }
+  }
+};
+
+// 4. Page Lifecycle & BFCache (freeze, resume, pagehide, pageshow)
+window.addEventListener("pagehide", stopLoop);
+window.addEventListener("pageshow", startLoop);
+window.addEventListener("freeze", stopLoop);
+window.addEventListener("resume", startLoop);
+
+// Render frame 0 immediately so screen is never blank
+scene(0);
+draw();
+
+// Initial start of dynamic animation loop
+startLoop();
 
 let resizeTimer = 0;
 addEventListener("resize", () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
+    if (document.hidden) return;
     const rows = Math.max(KNIGHT.rows, Math.min(260, Math.round(KNIGHT.cols * CW / CH * innerHeight / Math.max(1, innerWidth))));
     const cols = Math.max(KNIGHT.cols, Math.min(560, fitCols(rows)));
     if (Math.abs(cols - COLS) > 4 || Math.abs(rows - ROWS) > 4) location.reload();
   }, 400);
 });
+
+
 
 
 // ================================================================ Odometer Momentum Clock
@@ -821,26 +933,43 @@ function initClock() {
     updateTime(true);
   });
 
+  let clockTimer = null;
+  function scheduleNextTick() {
+    if (clockTimer) clearInterval(clockTimer);
+    clockTimer = setInterval(() => {
+      if (document.hidden) return;
+      updateTime(true);
+    }, 1000);
+  }
+
+  pauseClock = function() {
+    if (clockTimer) {
+      clearInterval(clockTimer);
+      clockTimer = null;
+    }
+    if (colonEl) {
+      colonEl.style.animationPlayState = 'paused';
+    }
+  };
+
+  resumeClock = function() {
+    if (colonEl) {
+      colonEl.style.animationPlayState = 'running';
+      colonEl.style.animationDelay = '-' + (new Date().getMilliseconds() / 1000) + 's';
+    }
+    updateTime(false);
+    scheduleNextTick();
+  };
+
   updateTime(false);
-  setInterval(() => updateTime(true), 1000);
+  scheduleNextTick();
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initClock);
-} else {
-  initClock();
-}
+initClock();
 
 </script>
 
-<div class="clock-container">
-  <div class="clock-day" id="clock-day"></div>
-  <div class="clock" id="clock" role="timer" aria-label="Current time" title="Click to toggle 12h / 24h format">
-    <span class="clock-time"></span>
-  </div>
-  <div class="clock-date" id="clock-date"></div>
-  <div class="clock-year" id="clock-year"></div>
-</div>
+
 
 </body>
 </html>
